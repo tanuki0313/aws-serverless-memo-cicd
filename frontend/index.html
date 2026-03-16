@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Memo App</title>
+
+<style>
+body{
+font-family: Arial;
+margin:40px;
+}
+
+#loginArea{
+margin-bottom:20px;
+}
+
+#memoArea{
+display:none;
+}
+
+input{
+padding:8px;
+margin-right:10px;
+}
+
+button{
+padding:8px 12px;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>Memo App</h1>
+
+<div id="loginArea">
+
+<h3>Login</h3>
+
+<input id="username" placeholder="username">
+<input id="password" type="password" placeholder="password">
+
+<button onclick="login()">Login</button>
+
+</div>
+
+<div id="memoArea">
+
+<h3>Memo</h3>
+
+<input id="memoText" placeholder="write memo">
+
+<button onclick="createMemo()">Add</button>
+
+<ul id="memoList"></ul>
+
+</div>
+
+<script src="login.js"></script>
+<script src="api.js"></script>
+<script src="memo.js"></script>
+
+</body>
+</html>
