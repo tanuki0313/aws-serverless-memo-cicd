@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Frontend stack for Memo App (S3 + CloudFront)
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev  # API Gateway のステージ名（Invoke URL のパスに使用）
+
+Resources:
+
+  ########################################################
+  # 工程1: S3 バケット（フロントエンド静的ファイル用）
+  ########################################################
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub memo-app-frontend-${AWS::AccountId}-${AWS::Region}
+      # パブリックアクセスをブロック（CloudFront 経由のみ許可）
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      # ライフサイクルルール（途中で失敗したアップロードを7日後に削除）
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteIncompleteMultipartUpload
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: Project
+          Value: MemoApp
+
+  ########################################################
+  # 工程3: CloudFront Origin Access Control (OAC)
+  # S3 への直接アクセスを防ぎ、CloudFront からのみアクセス可能
+  ########################################################
+  FrontendDistributionOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: memo-frontend-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ########################################################
+  # 工程4: CloudFront ディストリビューション
+  ########################################################
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Memo App Frontend
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_200
+        Origins:
+          # S3 静的コンテンツ用オリジン
+          - Id: S3Frontend
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendDistributionOAC.Id
+            S3OriginConfig: {}
+          # API Gateway 用オリジン
+          - Id: ApiOrigin
+            DomainName: !Sub
+              - ${ApiId}.execute-api.${AWS::Region}.amazonaws.com
+              - ApiId: !ImportValue MemoApiId
+            # API Gateway のステージを CloudFront 側で付与する（例: /dev）
+            OriginPath: !Sub /${StageName}
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+        # デフォルトキャッシュ動作（S3 用）
+        # ブラウザがアクセスしてきたらS3に転送するというルール
+        DefaultCacheBehavior:
+          TargetOriginId: S3Frontend
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS   # CORS 対応
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+          Compress: true
+        # /memos* は API Gateway に転送
+        CacheBehaviors:
+          - PathPattern: /memos*
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+            # キャッシュ無効（APIは毎回最新データを返す必要があるため）
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+            # Authorization含む全ヘッダーを転送（Hostヘッダーを除く）
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
+        # SPA 用：存在しないパスでも index.html を返す
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+
+  ########################################################
+  # 工程5: S3 バケットポリシー
+  # CloudFront からの GetObject のみ許可
+  ########################################################
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
+
+Outputs:
+
+  ########################################################
+  # フロントエンド URL（末尾スラッシュなし）
+  # ※ MemoFrontendUrlWithSlash に移行したため現在未使用
+  # ※ CloudFormation の制約上、既存 Export は他スタックが Import していなくても
+  #    update-stack 時にエラーになる可能性があるため残存
+  ########################################################
+  FrontendUrl:
+    Description: Frontend URL (CloudFront) ※現在未使用
+    Value: !Sub
+      - 'https://${DomainName}'
+      - DomainName: !GetAtt FrontendDistribution.DomainName
+    Export:
+      Name: MemoFrontendUrl
+
+  # Cognito Hosted UI 用（末尾スラッシュ付き。login.js の redirectUri と一致させる）
+  FrontendUrlWithSlash:
+    Description: Frontend URL with trailing slash (for Cognito CallbackURLs)
+    Value: !Sub
+      - 'https://${DomainName}/'
+      - DomainName: !GetAtt FrontendDistribution.DomainName
+    Export:
+      Name: MemoFrontendUrlWithSlash
+
+  ########################################################
+  # CloudFront ディストリビューションID（invalidation 用）
+  ########################################################
+  FrontendDistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref FrontendDistribution
+    Export:
+      Name: MemoFrontendDistributionId
+
+  ########################################################
+  # S3 バケット名（アップロード先）
+  ########################################################
+  FrontendBucketName:
+    Description: S3 Bucket for frontend assets
+    Value: !Ref FrontendBucket
+    Export:
+      Name: MemoFrontendBucketName

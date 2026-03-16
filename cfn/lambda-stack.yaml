@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda stack for Memo App
+
+Resources:
+
+  # Lambda実行ロール
+  MemoLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: memo-lambda-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        # CloudWatch Logs出力
+        # AWSLambdaBasicExecutionRoleはLambdaのログをCloudWatchに出すための権限
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: DynamoDBAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !ImportValue MemoTableArn
+
+
+  # Lambda関数
+  MemoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: memo-function
+
+      Runtime: nodejs20.x
+      Handler: memo-lambda.handler
+
+      Role: !GetAtt MemoLambdaRole.Arn
+
+      Timeout: 10
+      MemorySize: 128
+
+      # DynamoDBテーブル名を環境変数で渡す
+      Environment:
+        Variables:
+          TABLE_NAME: !ImportValue MemoTableName
+
+      # LambdaコードをS3から取得
+      Code:
+        S3Bucket: memo-app-lambda-code
+        S3Key: memo-lambda.zip
+
+
+Outputs:
+
+  # API GatewayからLambdaを呼ぶために使用
+  LambdaFunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt MemoFunction.Arn
+    Export:
+      Name: MemoLambdaArn

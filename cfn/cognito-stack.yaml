@@ -1,0 +1,83 @@
+# Cognito ユーザープール + Hosted UI（OAuth 2.0）
+# デプロイ順: frontend-stack を先にデプロイし、MemoFrontendUrl を Export してからこのスタックをデプロイすること
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cognito Stack (User Pool + Hosted UI)
+
+Resources:
+
+  # ユーザー情報を保存するプール
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: memo-user-pool
+
+      # ユーザー登録時にメールアドレスを自動で認証する設定
+      AutoVerifiedAttributes:
+        - email
+
+      # メールアドレスでログインできる設定
+      UsernameAttributes:
+        - email
+
+
+  # アプリクライアント（Hosted UI = OAuth 2.0 有効）
+  # 以下の設定で「Client is not enabled for OAuth2.0 flows」を避け、Hosted UI でログイン可能にする
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+
+      ClientName: memo-client
+      UserPoolId: !Ref UserPool
+
+      # ブラウザアプリなのでシークレットなし
+      GenerateSecret: false
+
+      # Hosted UI で使う ID プロバイダ（Cognito ユーザープール）
+      SupportedIdentityProviders:
+        - COGNITO
+
+      # ========== Hosted UI（OAuth 2.0）を有効にする設定 ==========
+      # これを true にしないと Hosted UI が使えず "Client is not enabled for OAuth2.0 flows" になる
+      AllowedOAuthFlowsUserPoolClient: true
+
+      # 認可コード付与（Authorization Code）のみ許可
+      AllowedOAuthFlows:
+        - code
+
+      # スコープ（openid 必須、email はメール取得用）
+      AllowedOAuthScopes:
+        - openid
+        - email
+
+      # ログイン成功後のリダイレクト先（末尾スラッシュ付き。login.js の redirectUri と一致）
+      CallbackURLs:
+        - !ImportValue MemoFrontendUrlWithSlash
+
+      # ログアウト後のリダイレクト先
+      LogoutURLs:
+        - !ImportValue MemoFrontendUrlWithSlash
+
+      # オプション: ユーザー存在エラーを隠してセキュリティ向上
+      PreventUserExistenceErrors: ENABLED
+
+
+  # Cognito Hosted UI のログイン画面URLを作成
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: memo-app-auth-sample
+      UserPoolId: !Ref UserPool
+
+
+# 他のスタック(API Gatewayなど)から参照するための出力
+Outputs:
+
+  UserPoolId:
+    Value: !Ref UserPool
+    Export:
+      Name: UserPoolId
+
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Export:
+      Name: UserPoolClientId

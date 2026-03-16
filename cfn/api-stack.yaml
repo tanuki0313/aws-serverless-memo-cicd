@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: API Gateway stack for Memo App
+
+Parameters:
+  # ステージを設定(今回は勉強用なのでdev)
+  StageName:
+    Type: String
+    Default: dev
+
+
+Resources:
+
+########################################################
+# API Gateway
+########################################################
+
+  # API Gatewayを作成
+  MemoApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: memo-api
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+
+########################################################
+# /memos Resource
+########################################################
+
+  # APIのpath作成(ブラウザがアクセスする'/memos'のURLを作成している)
+  MemoApiMemosResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref MemoApi
+      ParentId: !GetAtt MemoApi.RootResourceId
+      PathPart: memos
+
+
+########################################################
+# Cognito Authorizer
+########################################################
+
+  # JWT認証の確認
+  MemoApiCognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: memo-cognito-authorizer
+      Type: COGNITO_USER_POOLS
+      RestApiId: !Ref MemoApi
+      IdentitySource: method.request.header.Authorization
+
+      ProviderARNs:
+        - !Sub
+          - arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+          - UserPoolId: !ImportValue UserPoolId
+
+
+########################################################
+# ANY /memos Method
+########################################################
+
+  # /memosに対してANY(GET,POST,PUT,DELETEの処理)を付与
+  MemoApiMemosAnyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MemoApi
+      ResourceId: !Ref MemoApiMemosResource
+      HttpMethod: ANY
+
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref MemoApiCognitoAuthorizer
+
+      # Lambda連携
+      Integration:
+        # AWS_PROXY:リクエストをそのままLambdaに渡す
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - LambdaArn: !ImportValue MemoLambdaArn
+
+########################################################
+# OPTIONS /memos Method (CORS Preflight)
+########################################################
+
+  # ブラウザは Authorization ヘッダ等があると事前に OPTIONS（プリフライト）を送る。
+  # これが Cognito 認証で弾かれると、GET/POST が実行されないため、OPTIONS は認証なしで返す。
+  MemoApiMemosOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MemoApi
+      ResourceId: !Ref MemoApiMemosResource
+      HttpMethod: OPTIONS
+
+      AuthorizationType: NONE
+
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{\"statusCode\": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Headers: true
+
+
+########################################################
+# Lambda Invoke Permission
+########################################################
+
+  # API Gateway → Lambda実行を許可
+  MemoLambdaPermissionForApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !ImportValue MemoLambdaArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MemoApi}/*/*/memos
+
+
+########################################################
+# API Deployment
+########################################################
+
+  # API Gatewayをデプロイ
+  MemoApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - MemoApiMemosAnyMethod
+      - MemoApiMemosOptionsMethod
+    Properties:
+      RestApiId: !Ref MemoApi
+      Description: Memo API deployment
+
+
+########################################################
+# Stage
+########################################################
+
+  MemoApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      StageName: !Ref StageName
+      RestApiId: !Ref MemoApi
+      DeploymentId: !Ref MemoApiDeployment
+
+
+########################################################
+# Outputs
+########################################################
+
+Outputs:
+
+  # 別スタックから参照(cloudfront-stack.yaml)、(AWS CLI / SDKの接続の際にも使用)
+  MemoApiId:
+    Description: API Gateway RestApi ID
+    Value: !Ref MemoApi
+    Export:
+      Name: MemoApiId
+
+  # APIのURLを出力
+  MemoApiInvokeUrl:
+    Description: Invoke URL
+    Value: !Sub https://${MemoApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+    Export:
+      Name: MemoApiInvokeUrl
