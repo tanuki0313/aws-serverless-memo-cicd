@@ -1,0 +1,76 @@
+version: 0.2
+
+# 環境変数（S3バケット名など）
+env:
+  variables:
+    LAMBDA_BUCKET: "myapp-lambda-bucket-apne1"       # Lambdaコード格納用バケット
+    FRONTEND_BUCKET: "myapp-frontend-bucket-apne1"   # フロントエンド格納用バケット
+    CFN_BUCKET: "myapp-cfn-bucket-apne1"             # CloudFormationテンプレート格納用バケット
+    AWS_DEFAULT_REGION: "ap-northeast-1"       # デプロイ先リージョン
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+      python: 3.11
+    commands:
+      - echo "=== Install phase ==="
+      # 依存関係のインストール
+      - npm install
+      - pip install -r requirements.txt
+      - echo "Dependencies installed."
+
+  pre_build:
+    commands:
+      - echo "=== Pre-build phase ==="
+      # Git情報やバージョン番号などを確認 / 環境設定
+      - echo "CodeBuild pre-build setup complete."
+
+  build:
+    commands:
+      - echo "=== Build phase ==="
+      
+      # Lambdaコードのビルド & ZIP化
+      - echo "Building Lambda function..."
+      - mkdir -p build/lambda
+      - cp -r lambda/* build/lambda/
+      - cd build/lambda
+      - zip -r ../../lambda.zip .
+      - cd ../../
+      - echo "Lambda package created."
+
+      # フロントエンドのビルド
+      - echo "Building frontend..."
+      - npm run build
+      - echo "Frontend build complete."
+
+      # CloudFormationテンプレートの準備
+      - echo "Preparing CloudFormation templates..."
+      - mkdir -p cfn-output
+      - cp cloudformation/*.yaml cfn-output/
+      - echo "CloudFormation templates ready."
+
+  post_build:
+    commands:
+      - echo "=== Post-build phase ==="
+      # Lambda ZIP を S3 にアップロード
+      - echo "Uploading Lambda to S3..."
+      - aws s3 cp lambda.zip s3://$LAMBDA_BUCKET/lambda.zip
+      - echo "Lambda uploaded."
+
+      # フロントエンドを S3 にアップロード
+      - echo "Uploading frontend to S3..."
+      - aws s3 sync dist/ s3://$FRONTEND_BUCKET/
+      - echo "Frontend uploaded."
+
+      # CloudFormationテンプレートを S3 にアップロード
+      - echo "Uploading CloudFormation templates to S3..."
+      - aws s3 cp cfn-output/ s3://$CFN_BUCKET/ --recursive
+      - echo "CloudFormation templates uploaded."
+
+artifacts:
+  files:
+    # artifactsはここでは最低限残しておく
+    - lambda.zip
+    - dist/**/*
+    - cfn-output/**/*
