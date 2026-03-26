@@ -60,8 +60,8 @@ Resources:
 
       # LambdaコードをS3から取得
       Code:
-        S3Bucket: memo-app-lambda-code
-        S3Key: memo-lambda.zip
+        S3Bucket: myapp-lambda-bucket-apne1 
+        S3Key: lambda.zip
 
 
 Outputs:
