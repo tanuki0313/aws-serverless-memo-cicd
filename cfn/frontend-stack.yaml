@@ -6,6 +6,25 @@ Parameters:
     Type: String
     Default: dev  # API Gateway のステージ名（Invoke URL のパスに使用）
 
+  ########################################################
+  # ★追加：API連携を有効化するかどうか（2段階デプロイ用）
+  # false: APIなしで作成（循環依存回避）
+  # true : APIをCloudFrontに組み込む（2回目のデプロイで使用）
+  ########################################################
+  EnableApi:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+########################################################
+# ★追加：条件定義
+# EnableApi=true のときだけ API 関連リソースを有効化する
+########################################################
+Conditions:
+  UseApi: !Equals [!Ref EnableApi, "true"]
+
 Resources:
 
   ########################################################
@@ -58,21 +77,31 @@ Resources:
         Comment: Memo App Frontend
         DefaultRootObject: index.html
         PriceClass: PriceClass_200
+
         Origins:
           # S3 静的コンテンツ用オリジン
           - Id: S3Frontend
             DomainName: !GetAtt FrontendBucket.RegionalDomainName
             OriginAccessControlId: !GetAtt FrontendDistributionOAC.Id
             S3OriginConfig: {}
-          # API Gateway 用オリジン
-          - Id: ApiOrigin
-            DomainName: !Sub
-              - ${ApiId}.execute-api.${AWS::Region}.amazonaws.com
-              - ApiId: !ImportValue MemoApiId
-            # API Gateway のステージを CloudFront 側で付与する（例: /dev）
-            OriginPath: !Sub /${StageName}
-            CustomOriginConfig:
-              OriginProtocolPolicy: https-only
+
+          ########################################################
+          # ★追加：API Gateway 用オリジン（条件付き）
+          # EnableApi=true のときだけ作成される
+          # → 1回目デプロイでは存在しないため循環依存を回避できる
+          ########################################################
+          - !If
+            - UseApi
+            - Id: ApiOrigin
+              DomainName: !Sub
+                - ${ApiId}.execute-api.${AWS::Region}.amazonaws.com
+                - ApiId: !ImportValue MemoApiId
+              # API Gateway のステージを CloudFront 側で付与する（例: /dev）
+              OriginPath: !Sub /${StageName}
+              CustomOriginConfig:
+                OriginProtocolPolicy: https-only
+            - !Ref AWS::NoValue
+
         # デフォルトキャッシュ動作（S3 用）
         # ブラウザがアクセスしてきたらS3に転送するというルール
         DefaultCacheBehavior:
@@ -88,26 +117,34 @@ Resources:
           ForwardedValues:
             QueryString: false
           Compress: true
-        # /memos* は API Gateway に転送
+
+        ########################################################
+        # ★追加：/memos の API ルーティング（条件付き）
+        # EnableApi=true のときだけ有効化される
+        ########################################################
         CacheBehaviors:
-          - PathPattern: /memos*
-            TargetOriginId: ApiOrigin
-            ViewerProtocolPolicy: redirect-to-https
-            AllowedMethods:
-              - GET
-              - HEAD
-              - OPTIONS
-              - PUT
-              - POST
-              - PATCH
-              - DELETE
-            CachedMethods:
-              - GET
-              - HEAD
-            # キャッシュ無効（APIは毎回最新データを返す必要があるため）
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
-            # Authorization含む全ヘッダーを転送（Hostヘッダーを除く）
-            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
+          - !If
+            - UseApi
+            - PathPattern: /memos*
+              TargetOriginId: ApiOrigin
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods:
+                - GET
+                - HEAD
+                - OPTIONS
+                - PUT
+                - POST
+                - PATCH
+                - DELETE
+              CachedMethods:
+                - GET
+                - HEAD
+              # キャッシュ無効（APIは毎回最新データを返す必要があるため）
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+              # Authorization含む全ヘッダーを転送（Hostヘッダーを除く）
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
+            - !Ref AWS::NoValue
+
         # SPA 用：存在しないパスでも index.html を返す
         CustomErrorResponses:
           - ErrorCode: 403
@@ -144,21 +181,18 @@ Outputs:
 
   ########################################################
   # フロントエンド URL（末尾スラッシュなし）
-  # ※ MemoFrontendUrlWithSlash に移行したため現在未使用
-  # ※ CloudFormation の制約上、既存 Export は他スタックが Import していなくても
-  #    update-stack 時にエラーになる可能性があるため残存
   ########################################################
   FrontendUrl:
-    Description: Frontend URL (CloudFront) ※現在未使用
+    Description: Frontend URL (CloudFront)
     Value: !Sub
       - 'https://${DomainName}'
       - DomainName: !GetAtt FrontendDistribution.DomainName
     Export:
       Name: MemoFrontendUrl
 
-  # Cognito Hosted UI 用（末尾スラッシュ付き。login.js の redirectUri と一致させる）
+  # Cognito Hosted UI 用（末尾スラッシュ付き）
   FrontendUrlWithSlash:
-    Description: Frontend URL with trailing slash (for Cognito CallbackURLs)
+    Description: Frontend URL with trailing slash
     Value: !Sub
       - 'https://${DomainName}/'
       - DomainName: !GetAtt FrontendDistribution.DomainName
