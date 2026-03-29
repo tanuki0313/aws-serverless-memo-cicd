@@ -4,7 +4,7 @@ version: 0.2
 env:
   variables:
     LAMBDA_BUCKET: "myapp-lambda-bucket-apne1"
-    FRONTEND_BUCKET: "myapp-frontend-bucket-apne1"
+    FRONTEND_BUCKET: "memo-app-frontend-566022582384-ap-northeast-1"
     CFN_BUCKET: "myapp-cfn-bucket-apne1"
     AWS_DEFAULT_REGION: "ap-northeast-1"
 
