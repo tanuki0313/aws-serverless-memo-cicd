@@ -4,7 +4,6 @@ version: 0.2
 env:
   variables:
     LAMBDA_BUCKET: "myapp-lambda-bucket-apne1"
-    FRONTEND_BUCKET: "memo-app-frontend-566022582384-ap-northeast-1"
     CFN_BUCKET: "myapp-cfn-bucket-apne1"
     AWS_DEFAULT_REGION: "ap-northeast-1"
 
@@ -52,11 +51,6 @@ phases:
       - echo "Uploading Lambda to S3..."
       - aws s3 cp lambda.zip s3://$LAMBDA_BUCKET/lambda.zip
       - echo "Lambda uploaded."
-
-      # フロントエンドをそのまま S3 にアップロード
-      - echo "Uploading frontend to S3..."
-      - aws s3 sync frontend/ s3://$FRONTEND_BUCKET/
-      - echo "Frontend uploaded."
 
       # CloudFormationテンプレートを S3 にアップロード
       - echo "Uploading CloudFormation templates to S3..."

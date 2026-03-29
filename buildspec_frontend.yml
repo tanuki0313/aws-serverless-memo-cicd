@@ -1,0 +1,16 @@
+version: 0.2
+
+env:
+  variables:
+    FRONTEND_BUCKET: "memo-app-frontend-566022582384-ap-northeast-1"
+    DISTRIBUTION_ID: "E2UH4OJ0EQEL7F"  # CloudFrontのディストリビューションIDに変更
+
+phases:
+  build:
+    commands:
+      - echo "=== Uploading frontend files ==="
+      - aws s3 sync frontend/ s3://$FRONTEND_BUCKET/
+      - echo "Frontend uploaded."
+      - echo "=== CloudFront cache invalidation ==="
+      - aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"
+      - echo "Cache invalidated."
