@@ -2,7 +2,7 @@ const region = "ap-northeast-1"
 
 // Cognito Hosted UI 用の設定
 // 実環境ではコンソールから取得した値に置き換える
-const clientId = "7imsnkqf9o3rsjobk33m6dgd2i" // UserPoolClient の ID
+const clientId = "6h51dho9nigg59d5qrateu9occ" // UserPoolClient の ID
 const domainPrefix = "memo-app-auth-sample" // cognito-stack.yaml の UserPoolDomain.Domain
 
 // CloudFront の URL（frontend-stack の FrontendUrl と一致させる）
