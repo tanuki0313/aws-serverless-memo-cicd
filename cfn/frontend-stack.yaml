@@ -28,30 +28,10 @@ Conditions:
 Resources:
 
   ########################################################
-  # 工程1: S3 バケット（フロントエンド静的ファイル用）
+  # ★修正：S3 バケットは既存のものを使用するため削除
+  # CloudFormationで新規作成しない（AlreadyExistsエラー回避）
   ########################################################
-  FrontendBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: myapp-frontend-bucket-apne1
-      # パブリックアクセスをブロック（CloudFront 経由のみ許可）
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
-      # ライフサイクルルール（途中で失敗したアップロードを7日後に削除）
-      LifecycleConfiguration:
-        Rules:
-          - Id: DeleteIncompleteMultipartUpload
-            Status: Enabled
-            AbortIncompleteMultipartUpload:
-              DaysAfterInitiation: 7
-      Tags:
-        - Key: Project
-          Value: MemoApp
+
 
   ########################################################
   # 工程3: CloudFront Origin Access Control (OAC)
@@ -77,11 +57,14 @@ Resources:
         Comment: Memo App Frontend
         DefaultRootObject: index.html
         PriceClass: PriceClass_200
-
         Origins:
           # S3 静的コンテンツ用オリジン
           - Id: S3Frontend
-            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            ########################################################
+            # ★修正：既存S3バケットを直接指定
+            # !GetAtt は使えないため、バケットのドメイン名を手動指定
+            ########################################################
+            DomainName: !Sub myapp-frontend-bucket-apne1.s3.${AWS::Region}.amazonaws.com
             OriginAccessControlId: !GetAtt FrontendDistributionOAC.Id
             S3OriginConfig: {}
 
@@ -163,7 +146,10 @@ Resources:
   FrontendBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref FrontendBucket
+      ########################################################
+      # ★修正：既存バケット名を直接指定
+      ########################################################
+      Bucket: myapp-frontend-bucket-apne1
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -172,7 +158,10 @@ Resources:
             Principal:
               Service: cloudfront.amazonaws.com
             Action: s3:GetObject
-            Resource: !Sub ${FrontendBucket.Arn}/*
+            ########################################################
+            # ★修正：既存バケットのARNを直接指定
+            ########################################################
+            Resource: arn:aws:s3:::myapp-frontend-bucket-apne1/*
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
@@ -213,6 +202,9 @@ Outputs:
   ########################################################
   FrontendBucketName:
     Description: S3 Bucket for frontend assets
-    Value: !Ref FrontendBucket
+    ########################################################
+    # ★修正：既存バケット名をそのまま出力
+    ########################################################
+    Value: myapp-frontend-bucket-apne1
     Export:
       Name: MemoFrontendBucketName
