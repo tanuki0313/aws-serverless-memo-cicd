@@ -5,7 +5,9 @@ env:
   variables:
     LAMBDA_BUCKET: "myapp-lambda-bucket-apne1"
     CFN_BUCKET: "myapp-cfn-bucket-apne1"
+    FRONTEND_BUCKET: "myapp-frontend-bucket-apne1"
     AWS_DEFAULT_REGION: "ap-northeast-1"
+    
 
 phases:
   install:
@@ -46,6 +48,11 @@ phases:
   post_build:
     commands:
       - echo "=== Post-build phase ==="
+
+      # フロントエンドファイルを S3 にアップロード
+      - echo "Uploading frontend templates to S3..."
+      - aws s3 cp frontend/ s3://$FRONTEND_BUCKET/ --recursive
+      - echo "frontend templates uploaded."
 
       # Lambda ZIP を S3 にアップロード
       - echo "Uploading Lambda to S3..."
