@@ -33,7 +33,7 @@ Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub memo-app-frontend-${AWS::AccountId}-${AWS::Region}
+      BucketName: myapp-frontend-bucket-apne1
       # パブリックアクセスをブロック（CloudFront 経由のみ許可）
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
